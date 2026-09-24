@@ -81,8 +81,12 @@ YAYOI_SKU_PATTERN = re.compile(r"^(.+)\((\d+)\)$")
 YAYOI_SKU_PREFIX = "md-"
 
 # --- 出力 ---
-LOCATION_COLUMNS = ["本社", "3F", "4F", "4F(PKG不備)", "物流", "弥生"]   # 表示順
-SHEET1_COLUMNS = ["品番", "弥生品番", "要確認", "商品名"] + LOCATION_COLUMNS + ["合計"]
+# 合計に含める拠点列（E~I列）。弥生はここに含めず、合計の後ろ（K列）に別掲する。
+PHYSICAL_LOCATION_COLUMNS = ["本社", "3F", "4F", "4F(PKG不備)", "物流"]
+LOCATION_COLUMNS = PHYSICAL_LOCATION_COLUMNS + ["弥生"]   # 表示順（画面サマリー等で使用）
+SHEET1_COLUMNS = (
+    ["品番", "弥生品番", "要確認", "商品名"] + PHYSICAL_LOCATION_COLUMNS + ["合計", "弥生"]
+)
 SHEET2_COLUMNS = ["品番", "弥生品番", "商品名", "弥生在庫数", "4F在庫数", "4F(PKG不備)在庫数"]
 
 SHEET1_NAME = "拠点別在庫"
@@ -343,7 +347,8 @@ def build_summary_table(zaico_bytes: bytes, butsuryu_bytes: bytes, yayoi_bytes: 
 
     merged["弥生品番"] = _clean_name_series(merged.get("_yayoi_raw_sku"))
     merged["要確認"] = ""
-    merged["合計"] = merged[LOCATION_COLUMNS].sum(axis=1).astype("int64")
+    # 合計は本社・3F・4F・4F(PKG不備)・物流のみ（弥生は含めない）
+    merged["合計"] = merged[PHYSICAL_LOCATION_COLUMNS].sum(axis=1).astype("int64")
 
     main_table = merged[SHEET1_COLUMNS].copy()
 
@@ -352,13 +357,13 @@ def build_summary_table(zaico_bytes: bytes, butsuryu_bytes: bytes, yayoi_bytes: 
         nc = yayoi_needs_check.copy()
         nc["品番"] = NO_SKU_MARK
         nc["要確認"] = NEEDS_CHECK_MARK
-        for col in ["本社", "3F", "4F", "4F(PKG不備)", "物流"]:
+        for col in PHYSICAL_LOCATION_COLUMNS:
             nc[col] = 0
-        nc["合計"] = nc["弥生"].astype("int64")
+        nc["合計"] = 0   # 弥生専用行は本社・3F・4F・4F(PKG不備)・物流が全て0のため合計も0
         nc = nc[SHEET1_COLUMNS]
         main_table = pd.concat([main_table, nc], ignore_index=True)
 
-    main_table["_sort_sku"] = main_table["品番"].replace(NO_SKU_MARK, "￿")
+    main_table["_sort_sku"] = main_table["品番"].replace(NO_SKU_MARK, " ")
     table = (
         main_table
         .sort_values(["_sort_sku", "弥生品番"], kind="stable")
